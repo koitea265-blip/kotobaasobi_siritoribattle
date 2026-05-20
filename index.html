@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>たのしいね　ことばあそび</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        body { background: #e5e7eb; font-family: sans-serif; touch-action: none; overscroll-behavior: none; }
+        
+        .chat-scroll::-webkit-scrollbar { width: 6px; }
+        .chat-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        .bubble { padding: 10px 14px; border-radius: 20px; max-width: 75%; font-size: 0.95rem; word-break: break-all; box-shadow: 0 1px 2px rgba(0,0,0,0.1); font-weight: bold; }
+        .bubble-user { background: #86efac; border-bottom-right-radius: 4px; }
+        .bubble-cat { background: #ffffff; border-bottom-left-radius: 4px; border: 1px solid #e2e8f0; }
+
+        .icon-btn { transition: transform 0.1s, box-shadow 0.1s; }
+        .icon-btn.selected { border-color: #3b82f6; background-color: #eff6ff; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); transform: scale(1.1); }
+
+        .flick-key { 
+            position: relative; background: white; border: 1px solid #cbd5e1; height: 55px;
+            display: flex; justify-content: center; align-items: center;
+            border-radius: 12px; font-weight: bold; font-size: 1.2rem; color: #1e293b;
+            user-select: none; touch-action: none; cursor: pointer;
+            box-shadow: 0 2px 0 #cbd5e1; z-index: 10;
+        }
+        .flick-key:active { transform: translateY(2px); box-shadow: 0 0 0 #cbd5e1; }
+        .flick-key.active { z-index: 50; }
+
+        .flick-guide { display: none; position: absolute; top: -48px; left: -48px; right: -48px; bottom: -48px; pointer-events: none; z-index: 100; }
+        .flick-key.active .flick-guide { display: block; }
+        .guide-char { 
+            position: absolute; width: 44px; height: 44px; background: white; border: 2px solid #3b82f6; 
+            border-radius: 8px; display: flex; justify-content: center; align-items: center; 
+            color: #3b82f6; font-weight: bold; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+            background-color: #f8fafc;
+        }
+        
+        .g-center { top: 50%; left: 50%; transform: translate(-50%, -50%); background: #eff6ff; }
+        .g-up { top: 0px; left: 50%; transform: translateX(-50%); }
+        .g-down { bottom: 0px; left: 50%; transform: translateX(-50%); }
+        .g-left { top: 50%; left: 0px; transform: translateY(-50%); }
+        .g-right { top: 50%; right: 0px; transform: translateY(-50%); }
+        
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .pop-animation { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    </style>
+</head>
+<body class="flex justify-center items-center min-h-[100dvh] m-0 p-2">
+
+    <!-- スタートモーダル (半透明背景とスマホサイズの角丸長方形カード) -->
+    <div id="modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center z-50 p-4 overflow-y-auto">
+        <div class="bg-yellow-50 rounded-[32px] border-4 border-yellow-300 shadow-2xl p-6 w-full max-w-sm flex flex-col items-center justify-center text-center pop-animation relative max-h-[95dvh] overflow-y-auto">
+            <div class="text-6xl mb-2 animate-bounce">🐱</div>
+            <h1 class="text-3xl font-extrabold text-gray-800 mb-1">たのしいね<br>ことばあそび</h1>
+            <p class="text-sm text-gray-600 mb-6 font-bold bg-yellow-200 px-3 py-1 rounded-full">～ねこと しりとり もじすうばとる～</p>
+            
+            <div class="bg-white p-4 rounded-2xl shadow-md w-full max-w-xs mb-6">
+                <!-- アイコン選択 -->
+                <div class="mb-4">
+                    <p class="text-sm font-bold text-gray-600 mb-2">あなたの あいこん</p>
+                    <div class="flex justify-center gap-4">
+                        <button onclick="selectIcon('👦', this)" class="icon-btn selected text-4xl w-16 h-16 rounded-full border-2 border-transparent flex items-center justify-center bg-gray-50">👦</button>
+                        <button onclick="selectIcon('👧', this)" class="icon-btn text-4xl w-16 h-16 rounded-full border-2 border-transparent flex items-center justify-center bg-gray-50">👧</button>
+                    </div>
+                </div>
+                <hr class="my-4 border-gray-200">
+                <!-- ターン数設定 -->
+                <div>
+                    <p class="text-sm font-bold text-gray-600 mb-2">やりとりする かいすう</p>
+                    <div class="flex items-center justify-center gap-4">
+                        <button onclick="changeTurns(-2)" class="w-10 h-10 bg-gray-200 rounded-full text-xl font-bold active:bg-gray-300">-</button>
+                        <span id="turnSettingDisplay" class="text-2xl font-bold w-12 text-center">10</span>
+                        <button onclick="changeTurns(2)" class="w-10 h-10 bg-gray-200 rounded-full text-xl font-bold active:bg-gray-300">+</button>
+                    </div>
+                </div>
+            </div>
+            <button onclick="startGame()" class="bg-blue-500 text-white px-10 py-4 rounded-full font-bold text-xl shadow-lg mb-2 active:scale-95 transition-transform w-full max-w-xs">はじめる</button>
+            <button onclick="showRules()" class="text-blue-600 underline font-bold px-4 py-2">？あそびかた</button>
+        </div>
+    </div>
+
+    <!-- あそびかたモーダル -->
+    <div id="rulesModal" class="fixed inset-0 bg-black/60 flex flex-col items-center justify-center z-[60] p-6 text-center hidden backdrop-blur-sm">
+        <div class="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl pop-animation text-left border-4 border-blue-400">
+            <h2 class="text-2xl font-extrabold mb-4 text-center text-blue-600 flex justify-center items-center gap-2"><span class="text-3xl">📖</span>あそびかた</h2>
+            <ul class="list-disc pl-5 space-y-3 text-gray-700 font-bold text-sm leading-relaxed">
+                <li>ねこと じゅんばんに ことばを つなげよう。</li>
+                <li>さいごに<strong>「ん」</strong>が ついたら まけ だよ。</li>
+                <li><strong>「ー」</strong>で おわるときは、その まえの もじから はじめるよ。（れい：すきー → き）</li>
+                <li><strong>「ゃ」「ゅ」「ょ」</strong>で おわるときは、まえの もじと くっつけて はじめるよ。（れい：きんぎょ → ぎょうざ）</li>
+                <li>わるい ことばや、ひとを きずつける ことばは つかえないよ。</li>
+            </ul>
+            <button onclick="hideRules()" class="bg-blue-500 text-white w-full py-3 mt-6 rounded-full font-bold text-lg shadow-lg active:bg-blue-600 transition-colors">わかった！</button>
+        </div>
+    </div>
+
+    <!-- リザルトモーダル（勝敗表示） -->
+    <div id="resultModal" class="fixed inset-0 bg-black/60 flex flex-col items-center justify-center z-[100] p-6 text-center hidden backdrop-blur-sm">
+        <div class="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl pop-animation">
+            <div id="resultEmoji" class="text-6xl mb-4">🏆</div>
+            <h2 id="resultTitle" class="text-3xl font-extrabold mb-2 text-gray-800">けっか はっぴょう</h2>
+            <p id="resultMsg" class="text-gray-600 mb-6 font-bold"></p>
+            
+            <div class="flex justify-around items-center mb-8 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <div class="text-center w-1/3">
+                    <div class="text-4xl mb-2">🐱</div>
+                    <div class="text-xs text-gray-500 font-bold mb-1">ねこ</div>
+                    <div class="text-4xl font-extrabold text-red-500" id="resultCatScore">0</div>
+                </div>
+                <div class="text-2xl font-black text-gray-300 italic">VS</div>
+                <div class="text-center w-1/3">
+                    <div class="text-4xl mb-2" id="resultUserIcon">👦</div>
+                    <div class="text-xs text-gray-500 font-bold mb-1">あなた</div>
+                    <div class="text-4xl font-extrabold text-blue-600" id="resultUserScore">0</div>
+                </div>
+            </div>
+
+            <button onclick="restartGame()" class="bg-blue-500 text-white w-full py-4 rounded-full font-bold text-xl shadow-lg active:bg-blue-600 transition-colors">もういちど あそぶ</button>
+        </div>
+    </div>
+
+    <!-- ゲームコンテナ -->
+    <div class="w-full max-w-md h-[95dvh] flex flex-col bg-slate-100 rounded-3xl shadow-2xl overflow-hidden border-4 border-slate-300 relative">
+        
+        <!-- ヘッダー -->
+        <header class="bg-slate-800 text-white p-3 flex justify-between items-center text-sm shadow-md z-10">
+            <div class="font-bold whitespace-nowrap">もじすう たいけつ</div>
+            <div class="flex gap-4 px-2">
+                <span class="text-white flex items-center gap-1">🐱 <span id="catCount" class="text-lg font-bold">0</span></span>
+                <span class="text-green-300 flex items-center gap-1"><span id="headerUserIcon">👦</span> <span id="userCount" class="text-lg font-bold">0</span></span>
+            </div>
+            <div class="text-yellow-300 font-bold whitespace-nowrap">のこり: <span id="turnCount">10</span></div>
+        </header>
+
+        <!-- チャットエリア -->
+        <div class="flex-1 flex flex-col overflow-hidden bg-[#74b9ff]">
+            <div id="chat" class="flex-1 p-3 overflow-y-auto chat-scroll flex flex-col gap-3 pb-4">
+                <div class="flex items-start gap-2 mb-2" id="firstCatMsg">
+                    <div class="text-3xl mt-1">🐱</div>
+                    <div class="bubble bubble-cat font-bold">さいしょは「ねこ」だよ。</div>
+                </div>
+            </div>
+
+            <!-- 入力表示＆送信ボタン -->
+            <div class="p-3 bg-white border-t-2 border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
+                <div class="flex items-center gap-2">
+                    <div class="flex-1 h-12 border-2 border-blue-400 rounded-xl flex items-center px-3 text-xl font-bold text-gray-800 bg-blue-50 overflow-hidden">
+                        <span id="prefix-char" class="text-blue-600 mr-0.5 select-none">こ</span>
+                        <input id="input-display" type="text" inputmode="none" class="flex-1 bg-transparent border-none outline-none text-xl font-bold text-gray-800 caret-blue-500 w-full" autocomplete="off" autofocus>
+                    </div>
+                    <button id="submitBtn" onclick="submitWord()" class="w-12 h-12 bg-blue-500 rounded-xl text-white flex justify-center items-center shadow-md active:bg-blue-600 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"></path><path d="M22 2L15 22L11 13L2 9L22 2Z"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- キーボードエリア -->
+        <div class="bg-slate-200 p-2 pb-6 z-30 flex justify-center">
+            <div class="grid grid-cols-3 gap-2 w-full max-w-[280px]" id="flick-pad">
+                <!-- JSで動的生成 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const apiKey = ""; 
+        
+        let initialTurns = 10;
+        let currentUserIcon = '👦';
+        let userScore = 0, catScore = 0, turns = 10;
+        let lastChar = 'こ';
+        let isProcessing = false;
+        let usedWords = new Set(['ねこ']);
+        let audioCtx = null;
+        let thinkingBubbleElement = null;
+        
+        // 辞書データ（おねだりされた平仮名単語や国名をたっぷり追加）
+        const dictionaryData = [
+            // あ行
+            "あたま あさ あき あめ あし あひる あずき あなご あぶら あくび あいす あかちゃん あさがお あしあと あじさい あるばむ あんこ あんぱんまん あさひ あみ あに あね あご あせ あきかん あおぞら あお あか あした あめりか あんぱん あいじょう あいすくりーむ あいであ あおば あおむし あかぐつ あかね あくしゅ あすぱらがす あせも あにめ あのね あぶらぜみ あまがえる あまやどり あまのがわ あみもの あめだま あめんぼ あり ありくい あるぷす あわび あんず あんてな あおもり あきた あいち おーすとらりあ",
+            // い行
+            "いぬ いと いし いも いか いす いちご いるか いんこ いわし いけ いずみ いたち いちょう いのしし いばら いえ いわ いとこ いかだ いいえ いちにち いのち いろ いろえんぴつ いけす いしゃ いしょう いすず いせえび いた いたずら いただき いち いちがつ いちねんせい いつか いなり いなほ いなずま いのり いばらき いびき いもむし いもようかん いやほん いらすと いろり いわて いんたーねっと いんど いんく いわて いしかわ いしやきいも いしだい いぐすり いすらえる いもふらい いしだたみ いっとうしょう いぎりす いたりあ いんどねしあ",
+            // う行
+            "うみ うし うま うめ うさぎ うどん うちわ うわぎ うきわ うぐいす うずら うそ うた うちゅう うつわ うなぎ うに うり うるとらまん うらしま うらしまたろう うえき うえ うしろ うそつき うたたね うちゅうじん うちゅうせん うつぼ うどう うどんこ うなじ うなぎどん うばぐるま うぶげ うまみ うみのいえ うみべ うめぼし うら うらぐち うらしま うららか うるし うるうどし うれしい うわさ うんち うんどう うんどうかい うんどうじょう うんてんしゅ うしわかまる うくれれ",
+            // え行
+            "えき えんぴつ えほん えのぐ えぷろん えび えだ えんとつ えいが えがお えきいん えんそく えさ えくぼ えり えあこん えい えいご えいせい えいよう ええと えきべん えすかれーたー えちぜん えちご えど えのき えのしま えはがき えひめ えひめけん えりあ えりまき えれべーたー えんげき えんげい えんどうまめ えんぴつけずり えんまさま えひめ えじぷと",
+            // お行
+            "おにぎり おかし おもちゃ おんがく おばけ おなか おうち おみせ おりがみ おんどけい おか おに おと おちゃ おとうと おまわりさん おかあさん おがわ おきなわ おくじょう おくりもの おさけ おさら おじさん おじいさん おたまじゃくし おちば おとこのこ おとな おねえさん おばあさん おふろ おべんとう おんど おうさま おうむ おおきさ おおみそか おおむぎ おおるり おかゆ おかわり おけ おけしょう おこじょ おこめ おさげ おさしみ おしゃべり おしゃぶり おたま おたより おちゃわん おっとせい おつかい おつり おてだま おてら おてんき おとうさん おとぎばなし おとしだま おともだち おにゆり おねしょ おねだり おねんど おはぎ おはだ おはな おはなみ おはなし おはやし おはらい おばけやしき おはし おばさん おみこし おみず おみそ おみそしる おみやげ おもち おやつ おやこ おやじ おやすみ おゆ おようふく おり おるすばん おれんじ おんせん おんどこ おおさか おきなわ",
+            // か行
+            "かさ かめ かに かき かお かみ からす かばん かまきり かえる かれー かい かん かぞく かぜ かみなり かぶとむし かたつむり かがみ かんばん かいもの かいじゅう かおす かきのみ かぎ かげ かげえ かげろう かこ かこう かざん かじ かじき かすてら かず かせき かた かたかな かたづけ かたまり かたみ かたみち かなみち かたむき かたやき かち かちょう かつ かつお かつおぶし かつどう かつら かてい かていか かど かどまつ かな かなざわ かなしみ かなづち かなもの かにたま かぬー かね かねもち かのじょ かび かぶ かぶき かぶと かぶら かま かまぼこ かみくず かみしばい かみのけ かみふうせん かみそり かめら かも かもしか かもつせん かゆ かゆみ から からおけ からだ かりうど かるた かるでら かるしうむ かれーらいす かれは かれんだー かろりー かわ かわうそ かわら かわらかぶと かわらやね かんきせん かんきつ かんさつ かんしゃ かんづめ かんとう かんどう かんとうちほう かんむり かんぱい かんぱん かんらんしゃ かながわ かんこく かなだ",
+            // き行
+            "きつね きつつき きって きっぷ きのぼり きもの きんぎょ きりん きゅうきゅうしゃ きんたろう きょうりゅう きょうしつ きょうし きっさてん きてぃ きんき きゅうり きょうだい きうい きかい きかんしゃ きがえ ききみみ きく きくばり きこり きざし きしゃ きず きずあて きせかえ きせつ きそ きぞく きたない きつねうどん きてん きと きど きどう きどうしゃ きなこ きぬ きのう きば きばせん きび きびだんご きふ きぶん きへい きぼう きみ きみどり きむち きめ きゃべつ きゃらめる きゃんぷ きゅう きゅうか きゅうばこ きゅうこう きゅうじつ きゅうにゅう きょう きょうかい きょうじゅ きょうと きょうふ きょく きよし きよみずでら きりかぶ きりぎりす きんこ きんじょ きんちゃく きんめだい きんようび きょうと けにあ",
+            // く行
+            "くま くつ くも くじら くさ くるま くすり くらげ くじゃく くび くつした くーらー くちびる くり くうき くうこう くうかん くえすと くおん くいず くいしんぼう くぎ くさき くさむら くしゃみ くすりばこ くずもち くだもの くちぶえ くつべら くつや くにたち くねくね くのいち くもり くもりぞら くらす くらすめーと くりーむ くりーにんぐ くりすます くりすますつりー くりぬき くるみ くるまいす くるめ くれよん くれーぷ くれーんしゃ くろーばー くろかみ くろご くろねこ くろまめ くわがた くわがたむし ぐんま ぐんたい くりすたる くまもと",
+            // け行
+            "けむり けいと けしごむ けむし けんばん けいさつ けーき けんびきょう けいかく けいさつしょ けいさつかん けいとだま けいろうのひ けがに けしょう けしょうしつ けだもの けっきょく けつえき けつだん けもの けやき けんか けんきゅう けんきゅうじょ けんきゅうしゃ けんこう けんさ けんしゃ けんじ けんちく けんちくか けんちくしゃ けんちくぶつ けんちんじる けんぽう けんみん",
+            // コ行
+            "こま こえ こおり こップ こい こども こまく こころ こめ こねこ こいぬ こぶた こくばん ころっけ こたつ こあら こおろぎ こうえん こうちゃ こうさく こうじ こうじちゅう こうじょう こうてい こうりゅう こえだ こおりざとう こかげ こきゅう こきょう こくばんけし こぐま こけし ここのか ここのつ こさめ こしかけ こしょう こすもす こぜに こそだて こたえ こたつ こちょう こちょうらん こつぶ こてい こてら こねんど このは このみ このはな このはむし こはく こはる こばん こびと こぶた こぼね こぼれ こまんど こみち こむぎ こむぎこ こめだわら こめかみ こやね こよみ こらっけ こんき こんさーと こんしゅう こんじょう こんすい こんど こんびに こんぺいとう こんぽーと こーすたー",
+            // さ行
+            "さる さかな さくら さつまいも さら さんだる さいふ さばく さんたくろーす さいれん さくらんぼ さつき ささのは さとう さどう さっか さっかー さっかーぼーる ざっし さといも さとうきび さどがしま さなぎ さにわ さぬき さぬきうどん さふぁり さふぁりぱーく さふらん さぶまりん さまー さみだれ さむらい さめ さめはだ さよう さよなら さらい さらし さらだ さらだゆ さるわたり さわがしい さわぎ さわら さんかく さんかくす さんかくじょうぎ さんだる さんじ さんじゅう さんせい さんそ さんぞく さんた さんち さんどう さんぱつ さんぽ さんぽみち さんま さんみゃく さんらん さんりん さんりんしゃ さんりく さいたま すぺいん",
+            // し行
+            "しか しお しっぽ しまうま しんかんせん しんごう しゃしん してん しゅりけん しょうぼうしゃ しらゆきひめ しょべるかー しし しんぞう しゅくだい しんぶん しゃぼんだま しずおか しいれ しおから しおからとんぼ しおこしょう しおみ しおやき しおゆ しおようかん しかく しかくすい しかくちゅう しかくじょうぎ しかご しきがみ しきもの しきさい しきしゃ しぐれ しげき しこく しこくさんみゃく しごと しずか しずおかけん しずく しずむ しぜん したぎ したじ したたき しちがつ しちごさん しちじ しちじゅう しちふくじん しちりん しちりんしゃ しつがいき しつもん しどうしゃ しずおか しが",
+            // す行
+            "すいか すずめ すな すみれ すとうぶ すぷーん すいとう すべりだい すこっぷ すいそう すきー すーぱー すいどう すいぞくかん すいみん すけーと すけっち すずき すずらん すたー すたじお すたんど すてーき すてーじ すてっぷ すてんれす すとりーと すとりーまー すとろー すないぱー すなば すのはら すのぼー すのーぼーど すぱげてぃ すぱい すぱいす すぱな すぷらいと すぷりんぐ すぷれー すぺーす すぺいん すぺしゃる すぺっく すぽんじ すぽーつ すぽーつかー すぽーつせんしゅ すぽーつじょう すまいる すまほ すみか すみっこ すもう すもも すらいむ すらいだー すらいす すりっぱ すりばち するめ するめいか すれこみ すわろー すわん すわんぼーと",
+            // せ行
+            "せなか せっけん せんせい せみ せんぷうき せんろ せんすいかん せろはんてーぷ せーたー せんたくき せいかつ せいふく せかい せっけんすい せなかあわせ せんとう せれもにー せりふ せんもん せいかい せんしゅ せっきょく せんでん せつめい せいせき せだい せきにん せんたく せぼね せんめんじょ せがれ",
+            // そ行
+            "そら そふと そうじき そり そば そばかす そうがんきょう そーせーじ そふとくりーむ そうだ そうじ そばつゆ そくど そくてい そこ そっくり そしき そだち そで そんちょう そんざい そうだん そうぞう そうこ そうご そうさ そうしき そうべつ そうめん",
+            // た行
+            "たぬき たこ たまご たけ たんぽぽ たまねぎ たね たいこ たび たつ たいよう たからばこ たんす たたつまき たっきゅう たけとんぼ たいや たこやき たき たまごやき たまりば たんぼ たんい たいちょう たいりょく たいかい たいざい たいいん たんけん たから たわし たこいと たてもの たいいく とちぎ とうかいどう",
+            // ち行
+            "ちず ちきゅう ちち ちてい ちーず ちくわ ちょうちょ ちょこれーと ちりとり ちょう ちちおや ちょうしんき ちゅうしゃき ちゅうしゃ ちゅうがっこう ちゅうおう ちゃりんこ ちり ちしき ちほう ちめい ちてん ちりょう ちから ちのう ちかてつ ちかどう ちゅうしゃじょう ちゅうしん ちゅうと ちば ちゅうごく",
+            // つ行
+            "つくえ つき つみき つつ つち つめ つる つな つばめ つり つきみだんご つちのこ つまみ つづき つうか つうこう つうしん つきあたり つきひ つかれ つがい つつつみ つむじ つらら つきみ",
+            // て行
+            "てがみ てのひら てんとうむし てれび てぶくろ てつ てんき てんぷら てじな てあらい てんぐ てつぼう てーぷ てーぶる てにす てがかり ていこう ていど ていき ていし てき てきせつ てくび てさぎょう てづくり てんさく てんし てんさい てんぷ",
+            // と行
+            "とけい とら とり とんぼ とうもろこし とびら とんねる といれ ともだち とうふ とうだい とらんぷ とけいや とうきょう とまと となかい とうき とうじ とうぜん とうばん とくべつ とくちょう とくてい とくちゅう とくい とくさん ところ とこや とうきょう とちぎ どいつ",
+            // な行
+            "なつ なし なわとび なす なっとう なみ ながぐつ なまえ なかま なべ ながし なだれ なわ なぞなぞ なな なのはな なみだ なまもの なまず なみき ながの なごや なんきょく なんきょくたい なかみ なかよし ながら なかば ながさ なきごえ なごり など ななめ ながの なら なっぱ",
+            // に行
+            "にわ にじ にわとり にんじん にっき にもつ にんにく にく にゅーす にんじゃ にちようび にかい にこにこ におい にがおえ にくまん にちじょう にっか にっこう にってい にほん にんき にんげん にんしき にんむ にんよう にいがた にほんれっとう にじます にらまんじゅう",
+            // ぬ行
+            "ぬいぐるみ ぬの ぬま ぬりえ ぬくもり ぬか ぬのきれ ぬりぐすり ぬれえん ぬるまゆ ぬりかべ ぬのぶくろ ぬまち ぬりもの ぬけがら ぬれぎぬ ぬすみ ぬのじ ぬし ぬきあし",
+            // ネ行
+            "ねこ ねずみ ねんど ねぎ ねむり ねっくれす ねつ ねがい ねがいごと ねがえり ねぎらい ねくたい ねこのて ねごと ねさげ ねずみいろ ねっけつ ねっしん ねっぱ ねつぼう ねまき",
+            // の行
+            "のり のこぎり のーと のど のはら のりまき のうか のうぎょう のうそん のうりょく のおと のきなみ のくち のげし のこり のぞみ のどか ののみや のぼり のみもの のりもの のれん のーとぶっく",
+            // は行
+            "はこ はな はさみ はと はし はりねずみ はち はなび はんばーぐ はる はっぱ はんかち はぐるま はみがき はむすたー はちみつ はいきん はいざら はいたつ はいれつ はおり はかい はかま はきもの はきょう はくしゅ はくさい はくちょう ほっかいどう ふくしま ひょうご ふらんす ぶらじる",
+            // ひ行
+            "ひこうき ひつじ ひまわり ひよこ ひかり ひも ぴあの ひげ ひざ ひみつ ひる ひがし ひだり ひあたり ひかげ ひきだし ひきにく ひげん ひこう ひこざえもん ひざし ひしょ ひじょう ひだりて ひっこし ひつじぐも ひょうご",
+            // ふ行
+            "ふね ふく ふくろう ふえ ふで ふうせん ふじさん ふゆ ふた ふとん ふうしゃ ふろ ふくろ ふぁいやー ふぃるむ ふうけい ふうさ ふうふ ふうりん ふえか ふぉーく ふくさ ふくざつ ふくし ふくしゅう ふくそう ふくしま ふらんす",
+            // へ行
+            "へや へび へりこぷたー へいき へそ へいわ へんじ へいや へあぴん へいあん へいかん へいこう へいさ へいし へいせい へいばん へいめん へきが へそくり へた へちま へっどほん へなちょこ へびいちご へんか へんかん へんこう へんしん へんたい へんとう",
+            // ほ行
+            "ほし ほん ほたる ほうき ほっぺた ほのお ほね ほこり ほんや ほうせき ほうれんそう ほっとけーき ほっぺ ほいくえん ほうい ほうかご ほうきぼし ほうこう ほうこく ほうさく ほうそう ほうたい ほうちょう ほうふつ ほうぼう ほくきょく ほっかいどう",
+            // ま行
+            "まち まど まくら まんが まり まつり まめ まゆ まほう まっち まほうつかい まんげきょう まんと まかろに まんじゅう まあく まいご まいしゅう まいつき まいにち まいとし まえかけ まえがみ まきがい まきもの まぐろ まくらもと まご まじっく まぼろし みやぎ みどりがめ めきしこ",
+            // み行
+            "みかん みみ みず みどり みつばち みせ みかづき みずうみ みずぎ みなみ みぎ みきさー みそ みそしる みち みおとし みかた みかえる みき みぎて みくじ みけん みこし みこみ みさき みずたまり みずでっぽう みぞ みそか みょうじ みやぎ みどりがめ",
+            // む行
+            "むし むぎ むね むら むかし むかで むしめがね むぎちゃ むぎばたけ むしば むち むかえ むかしばなし むぎこ むげん むこ むこう むささび むしき むしとり むしばみ むすこ むすめ むせい むせん むだづかい むちゅう むっつ",
+            // め行
+            "めだか めいろ めだまやき めろん めがみ めばえ めだま めがね めだる めし めいし めいじん めんこ めんどう めーたー めんたる めんきょ めん めっせーじ めいかく めいさく めいさん めいしょう めいしょ めいしん めいちゅう めいりょう めきしこ",
+            // も行
+            "もも ももたろう もり もみじ もぐら もん もんしろちょう もち もえぎ もえがら もえる もくげき もくじ もくぞう もくてき もくひょう もくもく もくようび もけい もこもこ もさく もじ もじゃもじゃ もちあじ もちもの もちや もっか",
+            // や行
+            "やま やぎ やきいも やきゅう やね やじるし やかん やさい やたい やどかり やすみ やまびこ やまのぼり やえざくら やがい やかん やきざかな やきとり やきにく やきもち やくしゃ やくしょ やくそく やくわり やぐら やけい やけど やさいしる やさしさ やまなし",
+            // ゆ行
+            "ゆき ゆび ゆみ ゆびわ ゆきだるま ゆめ ゆうえんち ゆか ゆり ゆかた ゆうひ ゆきぐに ゆたんぽ ゆば ゆげ ゆうびんきょく ゆうしゃ ゆうがた ゆのみ ゆーふぉー ゆいいつ ゆいごん ゆうい ゆうえつ ゆうき ゆうぐれ ゆうこう ゆうじょう ゆうしょく ゆうじん",
+            // よ行
+            "よる ようふく よっと ようかい よかん よてい よつば よぞら よこはま よあけ ようい よういん ようき ようきゅう ようけん ようご ようこう ようさい ようじ ようしゃ ようしゅ ようしょう ようす ようせい ようそ ようちえん ようてん",
+            // ら行
+            "らっぱ らいおん らくだ らっこ らっかせい らんどせる らじお らーめん らいともん らっきょう らいと らいう らっか らぐびー らんち らんなー らべんだー らいす らくがき らくご らっかさん らっかん らっしゅ らべる らいきゃく らいねん らいしゅう らいげつ",
+            // り行
+            "りんご りす りぼん りゅっく りょうり りゅう りか りんぐ りれー りんじ りくじょう りもこん りんどう りく りょう りきし りゆう りっぱ りんか りえき りかい りくぐん りこん りさつ りそう りつ りゃくだつ りゃくしょう りかしつ りったい",
+            // る行
+            "るすばん るびー るーれっと るーぺ るーる るーく るっくす るあー るーたー るーむ るつぼ るーふ るり るりいろ るんるん るいけい るいじ るいすい るてん るろう るい るーぱー るもい るーまニア るくせんぶるく",
+            // れ行
+            "れもん れいぞうこ れんが れっしゃ れすとらん れきし れんこん れんしゅう れんぞく れーす れんらく れたす れいぞう れんげ れい れんらくちょう れーる れいがい れいきゃく れいぎ れいこく れいさい れいせい れきだい れきほう れこーど れこーだー れじ",
+            // ろ行
+            "ろうそく ろけっと ろば ろぼっと ろくろ ろーるけーき ろうか ろじ ろくおん ろうや ろんどん ろっぽんぎ ろーぷ ろーらー ろーま ろうじん ろせん ろうが ろうぎ ろうどう ろうむ ろうりょく ろく ろくじゅう ろくがつ ろこつ ろせんず ろっく ろてん",
+            // わ行
+            "わに わっか わかめ わたあめ わし わたし わごむ わら わらじ わんぴーす わな わき わらしべ わたりどり わくせい わしょく わさび わっふる わかもの わだい わかば わかれ わがまま わきみ わく わくわく わけ わさび わすれもの わた わたあめ わたがし わかやま",
+            // 濁音・半濁音
+            "がらす ぎたー げた げーむ ごま ごりら ごむ ざしき ざる じしゃく じてんしゃ じどうしゃ ずかん ずぼん ぞうきん でんわ でんしゃ どんぐり ばった ばなな ぶた ぶどう ぶらんこ べんとう べっど ぼうし ぼたん ぱんだ ぱんつ ぴーまん ぷーる ぷりん ぺん ぽけっと ぽすと がちょう がっき がむ ぎゅうにゅう ぎょうざ ぐみ ぐんて げきじょう げんかん ごえん ごしき ごちそう ごはん ざっし ざぶとん じゃがいも だいこん だいどころ でんき どろ どろぼう ばす ばすけっと びーだま びんご ぶらし ぼーる がいこく がいしゅつ がか がけ がちょう がっかり がまん がれき がろん ぎゃく ぎゅうにく ぎょうぎ ぎんこう ぎんめだる ぐんかん ぐんて げきじょう げんき げんじつ げんじゅう げんしょう げんそ げんば ごかい ごうかく ごうとう ごえん ごうりゅう ごみ ごむ ごーかーと ざいさん ざいもく ざせき ざせつ ざっそう ざんねん ざんしょ じこ じこく じさ じしょ じしん じしゃく じたい じだん じつ じっさい じっぷ じぶん ずが ずけい ずこう ずぼら ぜいたく ぜいきん ぜっこう ぜったい ぜんしん ぜんたい ぜんぱん ぜんめつ ぜんめん ぜんや ぞう ぞうお ぞうか ぞうさ ぞうき ぞくぞく ぞろめ だい だいず だいひょう だいめい だんがん だんご だんし だんじょ だんぼーる だんろ ぢ づけ でぐch デコぼこ でしゃばり でんきゅう でんせつ でんち でんぱ でんぽう でんりょう どあ どあぶ どいつ どうぐ どうくつ どうぶつ どうぶつえん どうろ どこ どせい どつぼ どて どろ ばあ ばいお ばいかく ばいきん ばいしゅん ばいせん ばいどく ばけつ ばけもの ばしょう ばし ばすてい ばたー ばら びーず びーる びがお びじゅつ びじょう びたみん びビデオ びひん びん びんご びんづめ ぶかつ ぶき ぶたにく ぶっか ぶつ ぶっしつ ぶつり ぶどうしゅ ぶひん ぶぶん べーこん べす べっきょ べつ べつめい べに べにや べろ べん べんきょう べんごし べんじょ ぼいん ぼう ぼうえい ぼうえんきょう ぼうか ぼうし ぼうず ぼうせき ぼうどう ぼく ぼくじょう ぼくそう ぼたん ぼち ぼっくす ぽいんと ぽけっと ぽすたー ぽすと ぽっと ぽぷら ぽりす ぽるか がくしゅう げーむせんたー びるま ぐんま びすけっと ごきぶり ごもくやきそば がっこう がくしゃ がくせい がっしょう がらくた がいどぶっく がんぷら がようし がく",
+            // 拗音（ちゃちゅちょ、しゃしゅしょ、じゃじゅじょ等）
+            "ちゃわん ちゃいろ ちょうちょ ちょこれーと ちゅうしゃき ちゅうしゃ ちゅうがっこう ちゃりんこ しゃしん しゃぼんだま しんかんせん しゃちょう しゅりけん しゅくだい しょうぼうしゃ しょうがっこう しょうゆ しょうじ ぎゅうにゅう ぎゅうにく ぎょうざ ぎょうれつ きゃべつ きゅうり きゅうきゅうしゃ きょうりゅう きょうしつ にんじゃ にゅうす びょういん びょうき じょうぎ じどうしゃ りゅっく りょうり ちょうちん ちょき ちょきんばこ しゃべる しゅうじ しょくじ しょくどう ちゃんばら ちゃがま ちゃばしら ちゃきん ちゃんぷるー ちゅうりっぷ ちゅうがく ちゅうしゃじょう ちょんまげ じゃがいも じゃぐち じゃんけん じゃり じゃばら jaーじー じゅごん りょこう しゃかい しゃこ しゃしょう しゃち しゃちほこ しゃめん しゅ しゅう しゅうかく しゅうきょう しゅうげき しゅうごう しゅうしょく しゅうぜん しゅつげき しゅんかん しょうか しょうかい しょうがくせい しょうご しょうこ しょうじょう しょうせつ しょうたい しょうどう しょうに しょうはい しょうぶ しょうめん しょうりょう じぇっとき じぇりー じょそう じょそうき じょしゅ じょゆう じょりょう じょろ じょうき じょうきょう じょうしゃ じょうけん じょう状態 じょうたつ じょうちょ じょうてい じょうひん じょうほう じょうやく じょうれん ちゃく ちゃくしゅ ちゃくせき ちゃくばらい ちゃくよう ちゃざわ ちゃしつ ちゃみせ ちゅうい ちゅうがい ちゅうし ちゅうしょう ちゅうじる ちゅうすう ちゅうそう ちゅうだん ちゅうちょ ちゅうどく ちゅうにch ちゅうもん ちょう ちょうか ちょうかく ちょうさ ちょうせつ ちょうはつ ちょうほう ちょきん ちょく ちょくせつ ちょっかく ちょっけい ちょっかん にゅーす にゅーよーく にゅうがく にゅうじょ にゅうす にゅうせん にゅうば にょう びょう びょういん びょうど びょうはく ひゃく ひゃっかてん ひゃくてん ひょう ひょうか ひょうげん ひょうし ひょうじ ひょうじゅん ひょうしょう ひょうてん ひょうほん みゃく みょう みょうが みょうち みょうにch みょうりょう りゃく りゃくだつ りゃくしょう りゃくだつ りゅうまち りゅう りゅうがく りゅうかん りゅうきゅう りゅうこう りゅうざん りゅうし りゅうせい りゅうせん りゅうどう りゅうび りょう りょうかい りょうが りょうがわ りょうきん りょうし りょうしん りょうせい りょうそく りょうち りょうど りょうば りょうめん りょかく りょかん りょくちゃ りょこう りょひ じぇっとこーすたー じょうすいき じょうすいじょう ちょうざめ きょうかしょ",
+            // く行に追加された言葉
+            "くじら"
+        ];
+        
+        const baseWords = [];
+        // 「なごや」「おみや」などしりとりで一般的に使われる単語を除き、語尾が「や（屋）」で終わる不自然な単語を弾くセット
+        const allowedYa = new Set(["なごや", "おみや", "こうや", "だいや"]);
+
+        dictionaryData.join(' ').split(' ').forEach(word => {
+            const cleanWord = word.trim();
+            // 2文字未満（1文字以下）の単語はスキップ
+            if (cleanWord.length < 2) return;
+            // 漢字やローマ字などの英数字、カタカナ（長音記号「ー」を除く）が含まれるものは厳格に除外
+            if (/[a-zA-Z0-9\u4e00-\u9faf\u30a0-\u30fb\u30fd-\u30ff]/.test(cleanWord)) return;
+            // 「のこ」「しかえし」などで終わる不自然なバグ語、量産語を徹底排除
+            if (cleanWord.endsWith('のこ') || cleanWord.endsWith('しかえし')) return;
+            // 「〜や（店名など）」を徹底的に弾くためのガード
+            if (cleanWord.endsWith('や') && !allowedYa.has(cleanWord)) return;
+            
+            baseWords.push(cleanWord);
+        });
+
+        const validWords = new Set(baseWords);
+
+        // 長音「ー」を母音に展開した表記（けーき → けえき、すきー → すきい 等）も正解として追加
+        const vowelMap = {
+            'あ':'あ','か':'あ','さ':'あ','た':'あ','な':'あ','は':'あ','ま':'あ','や':'あ','ら':'あ','わ':'あ','が':'あ','ざ':'あ','だ':'あ','ば':'あ','ぱ':'あ','ゃ':'あ',
+            'い':'い','き':'い','し':'い','ち':'い','ni':'い','ひ':'い','み':'い','り':'い','ぎ':'い','じ':'い','ぢ':'い','び':'い','ぴ':'い',
+            'う':'う','く':'う','す':'う','つ':'う','ぬ':'う','ふ':'う','む':'う','ゆ':'う','る':'う','ぐ':'う','ず':'う','づ':'う','ぶ':'う','ぷ':'う','ゅ':'う',
+            'え':'え','け':'え','せ':'え','て':'え','ね':'え','へ':'え','め':'え','れ':'え','げ':'え','ぜ':'え','で':'え','べ':'え','ぺ':'え',
+            'お':'お','こ':'お','そ':'お','と':'お','ほ':'お','も':'お','よ':'お','ろ':'お','を':'お','ご':'お','ぞ':'お','ど':'お','ぼ':'お','ぽ':'お','ょ':'お'
+        };
+
+        baseWords.forEach(word => {
+            if (word.includes('ー')) {
+                let hiraganaWord = '';
+                for (let i = 0; i < word.length; i++) {
+                    if (word[i] === 'ー' && i > 0) {
+                        hiraganaWord += vowelMap[word[i-1]] || 'ー';
+                    } else {
+                        hiraganaWord += word[i];
+                    }
+                }
+                validWords.add(hiraganaWord);
+            }
+        });
+
+        const chat = document.getElementById('chat');
+        const prefixCharDisplay = document.getElementById('prefix-char');
+        const inputDisplay = document.getElementById('input-display');
+        const submitBtn = document.getElementById('submitBtn');
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        // 豪華で長めのファンファーレ（約3秒間）に改良
+        function playFanfare() {
+            if (!audioCtx) return;
+            const playNote = (freq, startTime, duration) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime + startTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + startTime); osc.stop(audioCtx.currentTime + startTime + duration);
+            };
+            
+            // 華々しいメロディライン
+            playNote(523.25, 0.0, 0.2);   // ド(C5)
+            playNote(659.25, 0.2, 0.2);   // ミ(E5)
+            playNote(783.99, 0.4, 0.2);   // ソ(G5)
+            playNote(1046.50, 0.6, 0.4);  // ド(C6)
+            
+            playNote(783.99, 1.0, 0.2);   // ソ(G5)
+            playNote(1046.50, 1.2, 0.2);  // ド(C6)
+            playNote(1174.66, 1.4, 0.2);  // レ(D6)
+            playNote(1318.51, 1.6, 0.4);  // ミ(E6)
+            
+            playNote(1174.66, 2.0, 0.2);  // レ(D6)
+            playNote(1046.50, 2.2, 0.8);  // ド(C6)
+        }
+
+        function selectIcon(icon, btnElement) {
+            currentUserIcon = icon;
+            document.querySelectorAll('.icon-btn').forEach(btn => btn.classList.remove('selected'));
+            btnElement.classList.add('selected');
+        }
+
+        function changeTurns(delta) {
+            const newTurns = initialTurns + delta;
+            if (newTurns >= 2 && newTurns <= 50) {
+                initialTurns = newTurns;
+                document.getElementById('turnSettingDisplay').innerText = initialTurns;
+            }
+        }
+
+        function showRules() {
+            document.getElementById('rulesModal').classList.remove('hidden');
+        }
+
+        function hideRules() {
+            document.getElementById('rulesModal').classList.add('hidden');
+        }
+
+        function addThinkingBubble() {
+            removeThinkingBubble();
+            const wrapper = document.createElement('div');
+            wrapper.id = 'thinking-bubble';
+            wrapper.className = 'flex items-start gap-2 mb-2 pop-animation';
+            wrapper.innerHTML = `
+                <div class="text-3xl mt-1">🐱</div>
+                <div class="bubble bubble-cat flex items-center justify-center gap-1.5 min-w-[70px] py-4 px-5">
+                    <span class="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0ms;"></span>
+                    <span class="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 150ms;"></span>
+                    <span class="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 300ms;"></span>
+                </div>
+            `;
+            chat.appendChild(wrapper);
+            chat.scrollTop = chat.scrollHeight;
+            thinkingBubbleElement = wrapper;
+        }
+
+        function removeThinkingBubble() {
+            if (thinkingBubbleElement) {
+                thinkingBubbleElement.remove();
+                thinkingBubbleElement = null;
+            }
+        }
+
+        function startGame() { 
+            initAudio();
+            // 最初ねこが「スタート言葉」を1回答えたものとするため、残りターン数を1つ減らす
+            turns = initialTurns - 1;
+            userScore = 0; catScore = 0; 
+            
+            // 「ん」で終わる「みかん」などはスタート言葉から完全に除外
+            const startWordsList = ["ねこ", "いぬ", "りんご", "くるま", "ひまわり", "いちご", "くま", "うさぎ", "とけい", "ばなな", "らっぱ", "さる", "めがね", "たいこ", "すいか"];
+            let startWord = startWordsList[Math.floor(Math.random() * startWordsList.length)];
+            
+            catScore = startWord.length;
+            
+            let currentLastChar = startWord.slice(-1);
+            if (['ゃ','ゅ','ょ'].includes(currentLastChar)) currentLastChar = startWord.slice(-2);
+            else if (currentLastChar === 'ー') currentLastChar = startWord.slice(-2, -1);
+            
+            lastChar = currentLastChar;
+            usedWords = new Set([startWord]);
+            
+            document.getElementById('userCount').innerText = userScore;
+            document.getElementById('catCount').innerText = catScore;
+            document.getElementById('turnCount').innerText = turns;
+            document.getElementById('headerUserIcon').innerText = currentUserIcon;
+            document.getElementById('resultUserIcon').innerText = currentUserIcon;
+            
+            chat.innerHTML = `
+                <div class="flex items-start gap-2 mb-2">
+                    <div class="text-3xl mt-1">🐱</div>
+                    <div class="bubble bubble-cat font-bold">さいしょは「${startWord}」だよ。</div>
+                </div>`;
+            
+            prefixCharDisplay.innerText = lastChar;
+            inputDisplay.value = '';
+            
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('resultModal').classList.add('hidden');
+            
+            setTimeout(() => inputDisplay.focus(), 100);
+        }
+
+        function restartGame() {
+            document.getElementById('resultModal').classList.add('hidden');
+            document.getElementById('modal').style.display = 'flex';
+        }
+
+        function showResult(cause) {
+            document.getElementById('resultUserScore').innerText = userScore;
+            document.getElementById('resultCatScore').innerText = catScore;
+            
+            const titleEl = document.getElementById('resultTitle');
+            const msgEl = document.getElementById('resultMsg');
+            const emojiEl = document.getElementById('resultEmoji');
+            let isUserWin = false;
+
+            if (cause === 'user_n') {
+                titleEl.innerText = "ねこの かち！"; titleEl.className = "text-3xl font-extrabold mb-2 text-red-500";
+                msgEl.innerText = "「ん」が ついたから、あなたの まけだよ！"; emojiEl.innerText = "😭";
+            } else if (cause === 'cat_n') {
+                titleEl.innerText = "あなたの かち！"; titleEl.className = "text-3xl font-extrabold mb-2 text-blue-600";
+                msgEl.innerText = "ねこが「ん」を つけちゃった！"; emojiEl.innerText = "🎉"; isUserWin = true;
+            } else if (cause === 'cat_giveup') {
+                titleEl.innerText = "あなたの かち！"; titleEl.className = "text-3xl font-extrabold mb-2 text-blue-600";
+                msgEl.innerText = "ねこが ことばを おもいつけなかったニャ…"; emojiEl.innerText = "🎉"; isUserWin = true;
+            } else {
+                if (userScore > catScore) {
+                    titleEl.innerText = "あなたの かち！"; titleEl.className = "text-3xl font-extrabold mb-2 text-blue-600";
+                    msgEl.innerText = "もじすうで ねこに かったよ！"; emojiEl.innerText = "🏆"; isUserWin = true;
+                } else if (userScore < catScore) {
+                    titleEl.innerText = "ねこの かち！"; titleEl.className = "text-3xl font-extrabold mb-2 text-red-500";
+                    msgEl.innerText = "もじすうで ねこに まけちゃった…"; emojiEl.innerText = "😿";
+                } else {
+                    titleEl.innerText = "ひきわけ！"; titleEl.className = "text-3xl font-extrabold mb-2 text-gray-600";
+                    msgEl.innerText = "もじすうは おなじだったよ！"; emojiEl.innerText = "🤝";
+                }
+            }
+
+            document.getElementById('resultModal').classList.remove('hidden');
+            if (isUserWin) { playFanfare(); triggerConfetti(); }
+        }
+
+        function triggerConfetti() {
+            var duration = 3000; var end = Date.now() + duration;
+            (function frame() {
+                confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#3b82f6', '#86efac', '#fde047'] });
+                confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#ef4444', '#a855f7', '#f9a8d4'] });
+                if (Date.now() < end) requestAnimationFrame(frame);
+            }());
+        }
+
+        function addBubble(text, isUser = true) {
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex items-end gap-2 mb-2 ${isUser ? 'justify-end' : 'justify-start'}`;
+            const bubble = document.createElement('div');
+            bubble.className = `bubble ${isUser ? 'bubble-user' : 'bubble-cat'}`;
+            bubble.innerText = text;
+            
+            if (isUser) {
+                wrapper.appendChild(bubble);
+                wrapper.innerHTML += `<div class="text-3xl mb-1">${currentUserIcon}</div>`;
+            } else {
+                wrapper.className = 'flex items-start gap-2 mb-2';
+                wrapper.innerHTML = `<div class="text-3xl mt-1">🐱</div>`;
+                wrapper.appendChild(bubble);
+            }
+            chat.appendChild(wrapper);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        async function submitWord() {
+            if (isProcessing) return;
+            const userInput = inputDisplay.value;
+            if (!userInput) return;
+            if (turns <= 0) return;
+            
+            const word = lastChar + userInput;
+
+            // ユーザーの入力に対しても「〜や」除外ルールを厳格に適用
+            const userClean = word.trim();
+            if (userClean.endsWith('や') && !allowedYa.has(userClean)) {
+                addBubble(`「${word}」？ おみせ（〜や）の名前は、つかえないルールだよ。ちがう ことばを おしえて！`, false);
+                resetInput(); return;
+            }
+
+            if (!validWords.has(word)) {
+                addBubble(`「${word}」？ ねこは その ことばを しらないニャ。ちがう ことばを おしえて！`, false);
+                resetInput(); return;
+            }
+            if (usedWords.has(word)) {
+                addBubble(`「${word}」は もう つかったニャ！ちがう ことばに して！`, false);
+                resetInput(); return;
+            }
+
+            isProcessing = true;
+            submitBtn.innerHTML = '<span class="animate-spin text-xl">⏳</span>';
+            
+            if (apiKey) {
+                try {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ contents: [{parts: [{text: `「${word}」は、放送禁止用語、人を傷つける言葉、性的な言葉、または公序良俗に反する言葉ですか？「はい」か「いいえ」のみで答えてください。`}]}] })
+                    });
+                    const data = await res.json();
+                    if ((data.candidates?.[0]?.content?.parts?.[0]?.text || "").includes('はい')) {
+                        addBubble("その ことばは だめニャ…ちがう ことばを みつけよう！", false);
+                        resetInput(); return;
+                    }
+                } catch (e) { console.error("API Error", e); }
+            }
+
+            usedWords.add(word);
+            userScore += word.length;
+            document.getElementById('userCount').innerText = userScore;
+            addBubble(word, true);
+            
+            turns--; // プレイヤーの解答ターンが終了
+            document.getElementById('turnCount').innerText = turns;
+            
+            let currentLastChar = word.slice(-1);
+            if (['ゃ','ゅ','ょ'].includes(currentLastChar)) currentLastChar = word.slice(-2);
+            else if (currentLastChar === 'ー') currentLastChar = word.slice(-2, -1);
+
+            if (currentLastChar === 'ん') {
+                setTimeout(() => showResult('user_n'), 800);
+                resetInput(); return;
+            }
+
+            // プレイヤーが最後に答えて、残りターンが0になった場合は即座に終了画面にする
+            if (turns === 0) {
+                setTimeout(() => showResult('end'), 800);
+                resetInput(); return;
+            }
+
+            // まだターンがあるなら、ねこの考えるフリアニメーションを開始
+            addThinkingBubble();
+
+            setTimeout(() => {
+                removeThinkingBubble();
+
+                let catCandidates = baseWords.filter(w => w.startsWith(currentLastChar) && !usedWords.has(w) && !w.endsWith('ん'));
+                let catWord = "";
+                
+                if (catCandidates.length > 0) {
+                    // プレイヤーが3点以上リードしているか判定
+                    if (userScore - catScore >= 3) {
+                        // 差が3点以上開いている時はねこも「手加減なし（長い言葉も含めてランダム）」で回答する
+                        catWord = catCandidates[Math.floor(Math.random() * catCandidates.length)];
+                    } else {
+                        // 接戦またはねこがリードしている時は「手加減（もっとも文字数が短い言葉）」を選択する
+                        catCandidates.sort((a, b) => a.length - b.length);
+                        const minLength = catCandidates[0].length;
+                        const shortestCandidates = catCandidates.filter(w => w.length === minLength);
+                        catWord = shortestCandidates[Math.floor(Math.random() * shortestCandidates.length)];
+                    }
+                } else {
+                    let loseCandidates = baseWords.filter(w => w.startsWith(currentLastChar) && w.endsWith('ん') && !usedWords.has(w));
+                    if (loseCandidates.length > 0) {
+                        catWord = loseCandidates[0];
+                    } else {
+                        setTimeout(() => showResult('cat_giveup'), 800);
+                        return;
+                    }
+                }
+                
+                usedWords.add(catWord);
+                catScore += catWord.length;
+                document.getElementById('catCount').innerText = catScore;
+                
+                // ねこの言葉の末尾文字を正しく判定（拗音や長音に対応）
+                let catLastChar = catWord.slice(-1);
+                if (['ゃ','ゅ','ょ'].includes(catLastChar)) catLastChar = catWord.slice(-2);
+                else if (catLastChar === 'ー') catLastChar = catWord.slice(-2, -1);
+                
+                lastChar = catLastChar;
+                
+                turns--; // ねこの解答ターンが終了
+                document.getElementById('turnCount').innerText = turns;
+                addBubble(catWord, false);
+                
+                prefixCharDisplay.innerText = lastChar;
+
+                if (lastChar === 'ん') {
+                    setTimeout(() => showResult('cat_n'), 800);
+                } else if (turns === 0) {
+                    setTimeout(() => showResult('end'), 800);
+                }
+
+                // 次の入力に備えて入力表示フォーカスを維持
+                inputDisplay.focus();
+            }, 3000);
+
+            resetInput();
+        }
+
+        function resetInput() {
+            inputDisplay.value = '';
+            isProcessing = false;
+            submitBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"></path><path d="M22 2L15 22L11 13L2 9L22 2Z"></path></svg>';
+            setTimeout(() => inputDisplay.focus(), 50);
+        }
+
+        // PCのEnter（エンター）キーによる送信イベントの追加
+        inputDisplay.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // デフォルトの改行や送信をキャンセル
+                submitWord();
+            }
+        });
+
+        const keysData = [
+            { base: 'あ', flick: { left: 'い', up: 'う', right: 'え', down: 'お' } },
+            { base: 'か', flick: { left: 'き', up: 'く', right: 'け', down: 'こ' } },
+            { base: 'さ', flick: { left: 'し', up: 'す', right: 'せ', down: 'そ' } },
+            { base: 'た', flick: { left: 'ち', up: 'つ', right: 'て', down: 'と' } },
+            { base: 'な', flick: { left: 'に', up: 'ぬ', right: 'ね', down: 'の' } },
+            { base: 'は', flick: { left: 'ひ', up: 'ふ', right: 'へ', down: 'ほ' } },
+            { base: 'ま', flick: { left: 'み', up: 'む', right: 'め', down: 'も' } },
+            { base: 'や', flick: { up: 'ゆ', down: 'よ' } },
+            { base: 'ら', flick: { left: 'り', up: 'る', right: 'れ', down: 'ろ' } },
+            { base: '゛/小', type: 'func', action: 'modify', display: '<div class="flex flex-col items-center justify-center leading-none mt-1"><span class="text-xl">゛゜</span><span class="text-sm -mt-0.5">小</span></div>' },
+            { base: 'わ', flick: { left: 'を', up: 'ん', right: 'ー' } },
+            { base: '⌫', type: 'func', action: 'backspace' }
+        ];
+
+        const pad = document.getElementById('flick-pad');
+        
+        keysData.forEach(k => {
+            const el = document.createElement('div');
+            el.className = 'flick-key';
+            el.dataset.base = k.base;
+            
+            if (k.type === 'func') {
+                el.dataset.action = k.action;
+                el.innerHTML = k.display || k.base;
+                if(k.action === 'backspace' || k.action === 'modify') el.classList.add('bg-slate-300');
+            } else {
+                el.dataset.flick = JSON.stringify(k.flick);
+                el.innerHTML = `
+                    ${k.base}
+                    <div class="flick-guide">
+                        ${k.flick.up ? `<div class="guide-char g-up">${k.flick.up}</div>` : ''}
+                        ${k.flick.down ? `<div class="guide-char g-down">${k.flick.down}</div>` : ''}
+                        ${k.flick.left ? `<div class="guide-char g-left">${k.flick.left}</div>` : ''}
+                        ${k.flick.right ? `<div class="guide-char g-right">${k.flick.right}</div>` : ''}
+                        <div class="guide-char g-center">${k.base}</div>
+                    </div>
+                `;
+            }
+            pad.appendChild(el);
+        });
+
+        const THRESHOLD = 25;
+        let startX = 0, startY = 0, activeKey = null;
+
+        pad.addEventListener('pointerdown', e => {
+            const target = e.target.closest('.flick-key');
+            if (!target) return;
+            activeKey = target; startX = e.clientX; startY = e.clientY;
+            activeKey.classList.add('active'); activeKey.setPointerCapture(e.pointerId);
+        });
+
+        pad.addEventListener('pointerup', e => {
+            if (!activeKey) return;
+            const dx = e.clientX - startX; const dy = e.clientY - startY;
+            activeKey.classList.remove('active'); activeKey.releasePointerCapture(e.pointerId);
+
+            if (activeKey.dataset.action) {
+                handleFunctionKey(activeKey.dataset.action);
+            } else {
+                let char = activeKey.dataset.base;
+                const flick = JSON.parse(activeKey.dataset.flick || '{}');
+                
+                if (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD) {
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        char = dx > 0 ? (flick.right || char) : (flick.left || char);
+                    } else {
+                        char = dy > 0 ? (flick.down || char) : (flick.up || char);
+                    }
+                }
+                
+                // カーソルのある任意の位置に文字を挿入する
+                const input = inputDisplay;
+                const start = input.selectionStart;
+                const end = input.selectionEnd;
+                const val = input.value;
+                input.value = val.slice(0, start) + char + val.slice(end);
+                
+                // 挿入した文字の後ろにカーソルを合わせ、フォーカスを維持
+                input.selectionStart = input.selectionEnd = start + char.length;
+                input.focus();
+            }
+            activeKey = null;
+        });
+
+        pad.addEventListener('pointercancel', e => {
+            if (activeKey) { activeKey.classList.remove('active'); activeKey = null; }
+        });
+
+        function handleFunctionKey(action) {
+            const input = inputDisplay;
+            input.focus();
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            const val = input.value;
+
+            if (action === 'backspace') {
+                // カーソルの直前の1文字を削除する
+                if (start === end) {
+                    if (start > 0) {
+                        input.value = val.slice(0, start - 1) + val.slice(end);
+                        input.selectionStart = input.selectionEnd = start - 1;
+                    }
+                } else {
+                    input.value = val.slice(0, start) + val.slice(end);
+                    input.selectionStart = input.selectionEnd = start;
+                }
+            } else if (action === 'modify') {
+                // カーソルの直前の1文字を小書き・濁点トグルする
+                if (start > 0) {
+                    const lastChar = val.charAt(start - 1);
+                    const restBefore = val.slice(0, start - 1);
+                    const restAfter = val.slice(start);
+
+                    const modifyMap = {
+                        // あ行
+                        'あ': 'ぁ', 'ぁ': 'あ', 'い': 'ぃ', 'ぃ': 'い', 'う': 'ぅ', 'ぅ': 'う', 'え': 'ぇ', 'ぇ': 'え', 'お': 'ぉ', 'ぉ': 'お',
+                        // か行
+                        'か': 'が', 'が': 'か', 'き': 'ぎ', 'ぎ': 'き', 'く': 'ぐ', 'ぐ': 'く', 'け': 'げ', 'げ': 'け', 'こ': 'ご', 'ご': 'こ',
+                        // さ行
+                        'さ': 'ざ', 'ざ': 'さ', 'し': 'じ', 'じ': 'し', 'す': 'ず', 'ず': 'す', 'せ': 'ぜ', 'ぜ': 'せ', 'そ': 'ぞ', 'ぞ': 'そ',
+                        // た行
+                        'た': 'だ', 'だ': 'た', 'ち': 'ぢ', 'ぢ': 'ち', 'つ': 'づ', 'づ': 'っ', 'っ': 'つ', 'て': 'で', 'で': 'て', 'と': 'ど', 'ど': 'と',
+                        // は行（は -> ば -> ぱ -> は）
+                        'は': 'ば', 'ば': 'ぱ', 'ぱ': 'は', 'ひ': 'び', 'び': 'ぴ', 'ぴ': 'ひ', 'ふ': 'ぶ', 'ぶ': 'ぷ', 'ぷ': 'ふ', 'へ': 'べ', 'べ': 'ぺ', 'ぺ': 'へ', 'ほ': 'ぼ', 'ぼ': 'ぽ', 'ぽ': 'ほ',
+                        // や行
+                        'や': 'ゃ', 'ゃ': 'や', 'ゆ': 'ゅ', 'ゅ': 'ゆ', 'よ': 'ょ', 'ょ': 'よ',
+                        // わ行
+                        'わ': 'ゎ', 'ゎ': 'わ'
+                    };
+
+                    const modified = modifyMap[lastChar] || lastChar;
+                    input.value = restBefore + modified + restAfter;
+                    input.selectionStart = input.selectionEnd = start;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
